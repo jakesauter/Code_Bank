@@ -1,0 +1,821 @@
+---
+title: "Patient_File_Analysis"
+author: "Jake Sauter"
+date: "5/17/2021"
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE, 
+                      warning = FALSE, 
+                      comment = NA)
+```
+
+```{r}
+library(fs)
+library(DT)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(stringr)
+library(magrittr)
+library(patchwork)
+library(lubridate)
+library(reticulate)
+```
+
+```{r}
+data_file = '~/Documents/Woodlist/flow_df_ids_051321.csv'
+
+patient_df <- read.csv(data_file, 
+                       stringsAsFactors = FALSE) %>% 
+  mutate(Path.Procedure.Date = as_date(Path.Procedure.Date))
+
+patient_df$CANCER_TYPE %>% 
+  unique()
+```
+
+```{r}
+patient_df %>% 
+  head() 
+```
+
+## **Locating Patient Folders**
+
+```{r}
+find_patient_toplevel_folders <- function(MRNs, 
+                                         server_path = '/Volumes/PATIENTS/') {
+  
+  input_MRNs <- MRNs
+  
+  MRNs <- MRNs %>% 
+    as.character() %>% 
+    unique()
+  
+  paths <- rep(NA, length(MRNs))
+  names(paths) <- MRNs
+  
+  for (letter in letters) {
+    letter <- toupper(letter)    
+    path <- file.path(server_path, letter)
+    dir_names <- list.files(path = path)
+    
+    for (MRN in MRNs) {
+      # if path has already been found, skip
+      if(!is.na(paths[MRN])) next
+      
+      grep_res <- grep(MRN, dir_names, value = TRUE)
+      
+      if (length(grep_res) == 1) {
+        # if only one folder was found (success)
+        paths[MRN] <- 
+          fs::path(server_path, letter, grep_res) %>% 
+          stringr::str_replace_all('//', '/')
+      } else if(length(grep_res) > 1) {
+          # if more than one folder was found
+          paths[MRN] <- 
+            fs::path(server_path, letter, grep_res) %>% 
+            paste(collapse = ', ')
+      }
+    }
+    
+    Sys.sleep(0.001)
+  }
+  
+  output_paths <- 
+    sapply(input_MRNs, 
+           function(MRN) paths[as.character(MRN)])
+  
+  invisible(output_paths)
+}
+```
+
+```{r}
+paths <- find_patient_toplevel_folders(patient_df$MRN)
+
+patient_df <- 
+  patient_df %>% 
+  mutate(Top.Level.Folder = paths)
+
+patient_df 
+```
+
+### **Some MRN folders not found**
+
+This does not seem due to the procedure date or cancer type. This should not be a permissions issue as I would at least be able to see the folder by listing the `server_path/LETTER` directory, I just wouldn't be able to access any contents of the folder.
+
+```{r}
+patient_df %>% 
+  filter(is.na(Top.Level.Folder)) %>% 
+  mutate(year = year(Path.Procedure.Date)) %>% 
+  select(year, CANCER_TYPE, CANCER_TYPE_DETAILED, ONCOTREE_CODE)
+```
+
+**Save reason for patient exclusion for later**
+
+```{r}
+patient_df <- 
+  patient_df %>% 
+  mutate(Exclusion.Reason = 
+           if_else(is.na(Top.Level.Folder), 
+                   'Top Level Folder Not Found', 'Not Excluded'))
+
+patient_df %>% 
+  filter(Exclusion.Reason == 'Top Level Folder Not Found')
+```
+
+**Hypothesis**: These files exist, though the MRN was either entered incorrectly into the data frame or in the folder name. Most likely it is only off by one number.
+
+Could write some code to allow for near matches for these few patients and verify that no folders were already found for that MRN.
+
+### **Inpsection of patient folders with multiple folders found**
+
+For these patients provided, it looks like **51** of them had multiple folders mapping
+
+```{r}
+patient_df %>% 
+  filter(str_detect(Top.Level.Folder, ',')) 
+```
+
+```{r}
+patient_df %>% 
+  filter(str_detect(Top.Level.Folder, ',')) %>% 
+  select(Top.Level.Folder) 
+```
+
+From these cases I see above, all three posibilites are represented (one older, one newer, one just a mismatch right in the middle of the other dates, and one that was just completely empty.
+
+**Solution**: Since we are just looking for the flow_id folder anyway, consider the contents of both folders when searching for this and no other issues should arise.
+
+## **Strange filepath space issue from last week**
+
+This patient folder has two spaces in the filename on the server after last name, why is that path not returned from our find path code?
+
+
+## **Locating Flow directory for each patient**
+
+```{r}
+find_patient_flow_directory <- function(paths, flow_ids) {
+
+  flow_id_folders <- rep('', length(paths))
+  
+  for (i in seq_along(paths)) {
+  
+    # Will work for patients with one or multiple files, 
+    # as if they do not have a comma, only the filepath will
+    # be returned
+    split_paths <- str_split(paths[i], ',') 
+    
+    all_patient_files <- 
+      sapply(split_paths, function(path) {
+        # need to trim the path as there is a space
+        # at the start of any path other than the first
+        # so that printing the dataframe is more user friendly
+        path <- str_trim(path)
+        list.files(path = path, 
+                  full.names = TRUE)
+        })
+  
+    flow_id_folder <- 
+      grep(flow_ids[i], 
+           all_patient_files, 
+           value = TRUE) 
+    
+    if (length(flow_id_folder) == 0) {
+      flow_id_folder <- 'No Flow ID Folder Found'
+    }
+    
+    flow_id_folders[i] <- flow_id_folder
+    Sys.sleep(0.001)
+  }
+  
+  flow_id_folders
+}
+
+flow_id_folders <- 
+  find_patient_flow_directory(patient_df$Top.Level.Folder, 
+                              patient_df$Accession.Number)
+```
+
+```{r}
+patient_df <- 
+  patient_df %>% 
+  mutate(Flow.Data.Folder = flow_id_folders)
+
+flow_id_issue_df <- 
+  patient_df %>% 
+  filter(Flow.Data.Folder == 'No Flow ID Folder Found' & 
+         !is.na(Top.Level.Folder)) %>% 
+  select(Top.Level.Folder, Accession.Number)
+```
+
+**Saving exclusion reason for later**
+
+**Todo::** seee if the flow ids are under another patient
+
+```{r}
+patient_df <- 
+  patient_df %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Flow.Data.Folder == 'No Flow ID Folder Found' & 
+                   Exclusion.Reason == 'Not Excluded',  
+                    Flow.Data.Folder, Exclusion.Reason))
+```
+
+**Note** Adding `Sys.sleep(0.001)` between loop iterations seemed to solve the issue of some flow id folders not being found even though they exist
+
+```{r}
+flow_id_issue_df %>% 
+  mutate(reason = c(
+             'Flow Id folders, but not with the given flow id', 
+             'PDF only', 
+             'PDF only', 
+             'Flow Id folders, but not with the given flow id', 
+             'Flow Id folders, but not with the given flow id', 
+             'Flow Id folders, but not with the given flow id', 
+             'Flow Id folders, but not with the given flow id', 
+             'Flow Id folders, but not with the given flow id', 
+             'Flow Id folders, but not with the given flow id', 
+             'Flow Id folders, but not with the given flow id (8788 vs 8777, possible error?)', 
+             'Flow Id folders, but not with the given flow id')) %>% 
+  select(reason, Accession.Number)
+```
+
+### **Do Flow Directories that were not found come from same type of patients?**
+
+```{r, fig.width = 10}
+patient_df %>% 
+  mutate(flow_id_folder_found = 
+           if_else(Flow.Data.Folder == 'No Flow ID Folder Found', 
+                   'NO', 
+                   'YES')) %>% 
+  ggplot() + 
+    geom_histogram(aes(x = flow_id_folder_found),
+                   stat = 'count', 
+                   color = 'black',
+                   fill = 'skyblue') + 
+    ggtitle('Flow ID Folder For Patient Found?') +
+    xlab('') + ylab('') 
+   
+
+```
+
+```{r}
+patient_df %>% 
+  mutate(flow_id_folder_found = 
+           if_else(Flow.Data.Folder == 'No Flow ID Folder Found', 
+                   'NO', 
+                   'YES'), 
+         year = year(Path.Procedure.Date)) %>% 
+  ggplot() + 
+    geom_histogram(aes(x = flow_id_folder_found),
+                   stat = 'count', 
+                   color = 'black',
+                   fill = 'skyblue') + 
+    ggtitle('Flow ID Folder For Patient Found?') + 
+    xlab('') + ylab('') + 
+    facet_wrap(vars(year))
+```
+
+```{r}
+patient_df %>% 
+  mutate(flow_id_folder_found = 
+           if_else(Flow.Data.Folder == 'No Flow ID Folder Found', 
+                   'NO', 
+                   'YES'), 
+         year = year(Path.Procedure.Date)) %>% 
+  ggplot() + 
+    geom_histogram(aes(x = flow_id_folder_found),
+                   stat = 'count', 
+                   color = 'black',
+                   fill = 'skyblue') + 
+    ggtitle('Flow ID Folder For Patient Found?') + 
+    xlab('') + ylab('') + 
+    facet_wrap(vars(CANCER_TYPE))
+```
+
+## **Locating M1 and M2 FCS files for each patient**
+
+```{r}
+find_patient_M1_and_M2 <- 
+  function(flow_id_folders) {
+        
+    df <-
+        data.frame(flow_id_folder = flow_id_folders, 
+                   M1_path = rep('FOLDER DID NOT EXIST', length(flow_id_folders)), 
+                   M2_path = rep('FOLDER DID NOT EXIST', length(flow_id_folders)), 
+                   stringsAsFactors = FALSE)
+    
+    for (i in seq_along(flow_id_folders)) {
+     
+      if (!dir.exists(flow_id_folders[i])) next
+        
+      m1_path <-
+          grep('M1*\\.fcs', 
+               list.files(flow_id_folders[i], 
+                          full.names = TRUE), 
+               value = TRUE)
+      
+      m2_path <-
+            grep('M2*\\.fcs', 
+                 list.files(flow_id_folders[i], 
+                            full.names = TRUE), 
+                 value = TRUE)
+      
+      if (length(m1_path) > 1) {
+        m1_path <- 
+          m1_path %>% 
+          paste(collapse = ', ')
+      } else if (length(m1_path) == 0) {
+        m1_path <- 'NO M1 FOUND' 
+      }      
+      
+      if (length(m2_path) > 1) {
+        m2_path <- 
+          m2_path %>% 
+          paste(collapse = ', ')
+      } else if (length(m2_path) == 0) {
+        m2_path <- 'NO M2 FOUND' 
+      }
+      
+      df[i, 'M1_path'] <- m1_path
+      df[i, 'M2_path'] <- m2_path
+      Sys.sleep(0.001)
+    }
+    
+  df                 
+}
+```
+
+```{r}
+paths_df <- find_patient_M1_and_M2(patient_df$Flow.Data.Folder)
+
+paths_df %>% 
+  head()
+```
+
+### **Why M1/M2 Files Were Not found**
+
+5 no top level found + 11 no flow id folder found
+
+```{r}
+paths_df %>% 
+  filter(flow_id_folder == 'No Flow ID Folder Found') %>% 
+  nrow()
+```
+
+```{r}
+paths_df %>% 
+  filter(M1_path == 'NO M1 FOUND' | 
+         M2_path == 'NO M2 FOUND')
+```
+
+51 patients where the flow id folder could be found, we could not find an M1 or M2 fcs.
+
+```{r}
+if (!('M1_path' %in% names(patient_df))) {
+  patient_df <- 
+    patient_df %>% 
+    cbind(paths_df)
+}
+```
+
+```{r}
+patient_df <- 
+  patient_df %>% 
+  mutate(Permission.To.Read = 
+           as.logical(file.access(Flow.Data.Folder, mode = 4) + 1))
+
+
+m1_m2_issue_df <- 
+  patient_df %>% 
+  filter(M1_path == 'NO M1 FOUND' | 
+         M2_path == 'NO M2 FOUND') 
+
+m1_m2_issue_df %>% 
+  count(Permission.To.Read) %>% 
+  ggplot() + 
+  geom_col(aes(x = Permission.To.Read,
+               y = n), 
+           color = 'black',
+           fill = 'skyblue') +
+  ggtitle("Permission To Read Flow Folder?") + 
+  xlab('') + ylab('')
+```
+
+**Only had permission to read 6 of them**
+
+```{r}
+m1_m2_issue_df %>% 
+  filter(Permission.To.Read) %>%  
+  mutate(reason = c(
+     'Only B.fcs', 
+     'Only M1.fcs',
+     'PM.fcs', 
+     'B.fcs', 
+     'Ball.fcs Cart.fcs',
+     'Only M1.fcs')) %>% 
+  mutate(year = year(Path.Procedure.Date)) %>% 
+  select(year, CANCER_TYPE, reason, Flow.Data.Folder)
+```
+
+**Save Exclusion Reason**
+
+```{r}
+patient_df <- 
+  patient_df %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == FALSE, 
+                   'Flow Directory Read Permissions', 
+                   Exclusion.Reason)) %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == TRUE & 
+                      M1_path == 'NO M1 FOUND' & 
+                      M2_path == 'NO M2 FOUND', 
+                   'No M1.fcs or M2.fcs found', 
+                    Exclusion.Reason)) %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == TRUE &
+                     M1_path == 'NO M1 FOUND' &
+                     M2_path != 'NO M2 FOUND', 
+                    'No M1.fcs found, but M2.fcs found', 
+                    Exclusion.Reason)) %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == TRUE &
+                     M1_path != 'NO M1 FOUND' &
+                     M2_path == 'NO M2 FOUND', 
+                    'M1.fcs found, but no M2.fcs found', 
+                    Exclusion.Reason)) 
+
+                     
+```
+
+```{r}
+patient_df %>% 
+  filter(M1_path == 'NO M1 FOUND' | 
+         M2_path == 'NO M2 FOUND') %>% 
+  mutate(year = year(Path.Procedure.Date)) %>% 
+  count(year, CANCER_TYPE) %>% 
+  print()
+```
+
+**TODO:** Check if 2018 MDS patients are unique -- how MRNs are really represented?
+
+```{r}
+patient_df %>% 
+  filter(!Permission.To.Read) %>% 
+  mutate(year = year(Path.Procedure.Date)) %>% 
+  count(year, CANCER_TYPE)
+```
+
+## **Pie Chart of Final Cohort**
+
+[Great resource for making piecharts](https://www.r-graph-gallery.com/piechart-ggplot2.html)
+
+```{r}
+
+colors <- RColorBrewer::brewer.pal(5, 'Set2')
+  
+
+counts <- 
+  patient_df %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Exclusion.Reason == 'Not Excluded', 
+                   'Not Excluded', 
+                   'Excluded')) %>% 
+  count(Exclusion.Reason) 
+
+counts <- 
+  counts %>% 
+  mutate(Exclusion.Reason = factor(Exclusion.Reason, 
+                                   levels = c('Not Excluded', 'Excluded'))) %>% 
+  arrange(desc(Exclusion.Reason)) %>%
+  mutate(prop = n / sum(counts$n) * 100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop) 
+  
+  
+ggplot(counts, aes(x = '', y = prop, fill=Exclusion.Reason)) + 
+  geom_bar(stat = 'identity', width = 1) + 
+  geom_text(aes(y = ypos, label = n), 
+            color = "white", size = 5) +
+  coord_polar('y', start = 0) + 
+  theme_void() +
+  theme(legend.title = element_blank()) + 
+  scale_fill_manual(values = colors[1:2])
+```
+
+```{r}
+counts <- 
+  patient_df %>% 
+  filter(Exclusion.Reason != 'Not Excluded') %>% 
+  count(Exclusion.Reason) 
+
+counts <- 
+  counts %>% 
+  arrange(desc(Exclusion.Reason)) %>%
+  mutate(prop = n / sum(counts$n) * 100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop) %>% 
+  mutate(Exclusion.Reason = as.factor(Exclusion.Reason))
+  
+  
+ggplot(counts, aes(x = '', y = prop, fill=Exclusion.Reason)) + 
+  geom_bar(stat = 'identity', width = 1) + 
+  geom_text(aes(y = ypos, label = n), 
+            color = "white", size = 5) +
+  coord_polar('y', start = 0) + 
+  theme_void() +
+  theme(legend.title = element_blank()) + 
+  scale_fill_manual(values = colors[3:5])
+
+
+```
+
+### **Self-Contained Code to Produce Pie Chart**
+
+```{r}
+library(fs)
+library(DT)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(stringr)
+library(magrittr)
+library(patchwork)
+library(lubridate)
+library(reticulate)
+
+colors <- RColorBrewer::brewer.pal(5, 'Set2')
+
+
+find_patient_toplevel_folders <- function(MRNs, 
+                                         server_path = '/Volumes/PATIENTS/') {
+  
+  input_MRNs <- MRNs
+  
+  MRNs <- MRNs %>% 
+    as.character() %>% 
+    unique()
+  
+  paths <- rep(NA, length(MRNs))
+  names(paths) <- MRNs
+  
+  for (letter in letters) {
+    letter <- toupper(letter)    
+    path <- file.path(server_path, letter)
+    dir_names <- list.files(path = path)
+    
+    for (MRN in MRNs) {
+      # if path has already been found, skip
+      if(!is.na(paths[MRN])) next
+      
+      grep_res <- grep(MRN, dir_names, value = TRUE)
+      
+      if (length(grep_res) == 1) {
+        # if only one folder was found (success)
+        paths[MRN] <- 
+          fs::path(server_path, letter, grep_res) %>% 
+          stringr::str_replace_all('//', '/')
+      } else if(length(grep_res) > 1) {
+          # if more than one folder was found
+          paths[MRN] <- 
+            fs::path(server_path, letter, grep_res) %>% 
+            paste(collapse = ', ')
+      }
+    }
+    
+    Sys.sleep(0.001)
+  }
+  
+  output_paths <- 
+    sapply(input_MRNs, 
+           function(MRN) paths[as.character(MRN)])
+  
+  invisible(output_paths)
+}
+
+find_patient_flow_directory <- function(paths, flow_ids) {
+
+  flow_id_folders <- rep('', length(paths))
+  
+  for (i in seq_along(paths)) {
+  
+    # Will work for patients with one or multiple files, 
+    # as if they do not have a comma, only the filepath will
+    # be returned
+    split_paths <- str_split(paths[i], ',') 
+    
+    all_patient_files <- 
+      sapply(split_paths, function(path) {
+        # need to trim the path as there is a space
+        # at the start of any path other than the first
+        # so that printing the dataframe is more user friendly
+        path <- str_trim(path)
+        list.files(path = path, 
+                  full.names = TRUE)
+        })
+  
+    flow_id_folder <- 
+      grep(flow_ids[i], 
+           all_patient_files, 
+           value = TRUE) 
+    
+    if (length(flow_id_folder) == 0) {
+      flow_id_folder <- 'No Flow ID Folder Found'
+    }
+    
+    # Sometimes the flow id folder is copied to the 
+    # renamed paitient folder, though the patient flow
+    # files are always exactly the same, so just picking 
+    # the first one here
+    if(length(flow_id_folder) > 1) {
+      flow_id_folder <- flow_id_folder[1]
+    }
+    
+    flow_id_folders[i] <- flow_id_folder
+    Sys.sleep(0.001)
+  }
+  
+  flow_id_folders
+}
+
+find_patient_M1_and_M2 <- 
+  function(flow_id_folders) {
+        
+    df <-
+        data.frame(flow_id_folder = flow_id_folders, 
+                   M1_path = rep('FOLDER DID NOT EXIST', length(flow_id_folders)), 
+                   M2_path = rep('FOLDER DID NOT EXIST', length(flow_id_folders)), 
+                   stringsAsFactors = FALSE)
+    
+    for (i in seq_along(flow_id_folders)) {
+     
+      if (!dir.exists(flow_id_folders[i])) next
+        
+      m1_path <-
+          grep('M1.*\\.fcs', 
+               list.files(flow_id_folders[i], 
+                          full.names = TRUE), 
+               ignore.case = TRUE, 
+               value = TRUE)
+      
+      m2_path <-
+            grep('M2.*\\.fcs', 
+                 list.files(flow_id_folders[i], 
+                            full.names = TRUE), 
+                 ignore.case = TRUE, 
+                 value = TRUE)
+      
+      if (length(m1_path) > 1) {
+        m1_path <- 
+          m1_path %>% 
+          paste(collapse = ', ')
+      } else if (length(m1_path) == 0) {
+        m1_path <- 'NO M1 FOUND' 
+      }      
+      
+      if (length(m2_path) > 1) {
+        m2_path <- 
+          m2_path %>% 
+          paste(collapse = ', ')
+      } else if (length(m2_path) == 0) {
+        m2_path <- 'NO M2 FOUND' 
+      }
+      
+      df[i, 'M1_path'] <- m1_path
+      df[i, 'M2_path'] <- m2_path
+      Sys.sleep(0.001)
+    }
+    
+  df                 
+}
+
+data_file = '~/Documents/Woodlist/flow_df_ids_051321.csv'
+
+patient_df <- read.csv(data_file, 
+                       stringsAsFactors = FALSE) 
+
+patient_df <- 
+  patient_df %>% 
+
+  mutate(Path.Procedure.Date = as_date(Path.Procedure.Date)) %>% 
+  mutate(Top.Level.Folder = 
+           find_patient_toplevel_folders(MRN)) %>% 
+  mutate(Flow.Data.Folder = 
+           find_patient_flow_directory(Top.Level.Folder, 
+                                      Accession.Number)) %>% 
+  mutate(Permission.To.Read = 
+           as.logical(file.access(Flow.Data.Folder, mode = 4) + 1))
+
+paths_df <- 
+  find_patient_M1_and_M2(patient_df$Flow.Data.Folder)
+
+# Bind M1 and M2 paths to patient data frame
+patient_df <- 
+  patient_df %>% 
+  cbind(paths_df)
+
+# Exclusion Reasons
+patient_df <- 
+  patient_df %>% 
+  mutate(Exclusion.Reason = 
+           if_else(is.na(Top.Level.Folder), 
+                   'Top Level Folder Not Found', 'Not Excluded')) %>% 
+   mutate(Exclusion.Reason = 
+           if_else(Flow.Data.Folder == 'No Flow ID Folder Found' & 
+                   Exclusion.Reason == 'Not Excluded',  
+                    Flow.Data.Folder, Exclusion.Reason)) %>% 
+   mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == FALSE, 
+                   'Flow Directory Read Permissions', 
+                   Exclusion.Reason)) %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == TRUE & 
+                      M1_path == 'NO M1 FOUND' & 
+                      M2_path == 'NO M2 FOUND', 
+                   'No M1.fcs or M2.fcs found', 
+                    Exclusion.Reason)) %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == TRUE &
+                     M1_path == 'NO M1 FOUND' &
+                     M2_path != 'NO M2 FOUND', 
+                    'No M1.fcs found, but M2.fcs found', 
+                    Exclusion.Reason)) %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Permission.To.Read == TRUE &
+                     M1_path != 'NO M1 FOUND' &
+                     M2_path == 'NO M2 FOUND', 
+                    'M1.fcs found, but no M2.fcs found', 
+                    Exclusion.Reason))  
+
+patient_df <- 
+  patient_df %>% 
+  select(-c(Permission.To.Read)) %>%
+  arrange(Exclusion.Reason)
+
+
+# Write out final df
+write.csv(patient_df, 
+          '~/Documents/Woodlist/jake_processed_flow_df_ids_051321.csv', 
+          row.names = FALSE)
+  
+
+counts <- 
+  patient_df %>% 
+  mutate(Exclusion.Reason = 
+           if_else(Exclusion.Reason == 'Not Excluded', 
+                   'Not Excluded', 
+                   'Excluded')) %>% 
+  count(Exclusion.Reason) 
+
+counts <- 
+  counts %>% 
+  mutate(Exclusion.Reason = factor(Exclusion.Reason, 
+                                   levels = c('Not Excluded', 'Excluded'))) %>% 
+  arrange(desc(Exclusion.Reason)) %>%
+  mutate(prop = n / sum(counts$n) * 100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop) 
+  
+  
+p1 <- 
+  ggplot(counts, aes(x = '', y = prop, fill=Exclusion.Reason)) + 
+  geom_bar(stat = 'identity', width = 1) + 
+  geom_text(aes(y = ypos, label = n), 
+            color = "white", size = 5) +
+  coord_polar('y', start = 0) + 
+  theme_void() +
+  theme(legend.title = element_blank()) + 
+  scale_fill_manual(values = colors[1:2])
+
+counts <- 
+  patient_df %>% 
+  filter(Exclusion.Reason != 'Not Excluded') %>% 
+  count(Exclusion.Reason) 
+
+counts <- 
+  counts %>% 
+  arrange(desc(Exclusion.Reason)) %>%
+  mutate(prop = n / sum(counts$n) * 100) %>%
+  mutate(ypos = cumsum(prop)- 0.5*prop) %>% 
+  mutate(Exclusion.Reason = as.factor(Exclusion.Reason))
+  
+  
+p2 <- 
+  ggplot(counts, aes(x = '', y = prop, fill=Exclusion.Reason)) + 
+  geom_bar(stat = 'identity', width = 1) + 
+  geom_text(aes(y = ypos, label = n), 
+            color = "white", size = 5) +
+  coord_polar('y', start = 0) + 
+  theme_void() +
+  theme(legend.title = element_blank()) + 
+  scale_fill_manual(values = colors[3:5])
+
+#TODO: break these down by the MRN level
+
+p1 / p2
+```
