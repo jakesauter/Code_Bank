@@ -1,10 +1,14 @@
 #!/bin/python3.8
 
+import sys
+sys.path.append('/Users/sauterj1/Documents/Patient_Folder_Analysis/Python/')
+
 import os
 import re
 import sys
 import csv
 import pprint
+import ccl_bplist
 
 # Wanted to break up logic in calculating the proportion info as 
 # this might get messy with accounting for possible spelling mistakes
@@ -21,27 +25,41 @@ def compute_pop_proportions(pop_info_dict):
     "Lymphocytes": 'Lymphocytes',
     "Basophils": 'Basophils',
     "Eosinophils": 'Eosynophils',
-    "PCDC":'PCDC'
-    # "Plasma Cells": 'Plasma cells'
+    "PCDC":'PCDC',
+    "Plasma Cells": 'Plasma cells'
   }
   
   for key, value in wbc_key_pairs.items(): 
     if value in pop_info_dict['M1']: 
       population_proportion_dict[key] = \
         pop_info_dict['M1'][value] / pop_info_dict['M1']['WBC']
-    else: 
+    elif value in pop_info_dict['M2']: 
        population_proportion_dict[key] = \
         pop_info_dict['M2'][value] / pop_info_dict['M2']['WBC']
+    else: 
+      population_proportion_dict[key] = -1
   
   if "Eryhthroids" in pop_info_dict['M1']: 
     population_proportion_dict["Eryhthroids"] = \
       pop_info_dict['M1']['Eryhthroids'] / pop_info_dict['M1']['Singlets']
-  else: 
+  elif "Eryhthroids" in pop_info_dict['M2']: 
     population_proportion_dict["Eryhthroids"] = \
       pop_info_dict['M2']['Eryhthroids'] / pop_info_dict['M2']['Singlets']
+  else: 
+    population_proportion_dict["Eryhthroids"] = -1
+    
+  if "WBC" in pop_info_dict['M1']: 
+    population_proportion_dict["WBC"] = \
+      pop_info_dict['M1']['WBC'] / pop_info_dict['M1']['Singlets']
+  elif "WBC" in pop_info_dict['M2']: 
+    population_proportion_dict["WBC"] = \
+      pop_info_dict['M2']['WBC'] / pop_info_dict['M2']['Singlets']
+  else: 
+    population_proportion_dict["Eryhthroids"] = -1
     
   for k,v in population_proportion_dict.items(): 
-    population_proportion_dict[k] = round(population_proportion_dict[k]*100, 2)
+    # population_proportion_dict[k] = round(population_proportion_dict[k]*100, 2)
+    population_proportion_dict[k] = population_proportion_dict[k]*100
 
   return(population_proportion_dict)
 
@@ -56,11 +74,15 @@ def write_pop_info_to_csv(pop_prop_dict, csv_filepath):
 
 def parse_pop_info_for_flow_dir(flow_directory): 
   
+  populations = ['CD34+', 'WBC', 'CD117', 'B cells', 'Lymphocytes', 
+               'Eryhthroids', 'Singlets', 'Plasma cells', 'Granulocytes', 
+               'WBC', 'Monocytes', 'Basophils', 'Eosynophils', 'PCDC']
+  
   owd = os.getcwd()
   os.chdir(flow_directory)
   flow_directory_files = os.listdir(flow_directory)
   nlys_files = [file for file in flow_directory_files if file.endswith(".nlys")]
-
+  
   if len(nlys_files) > 1: 
     print("MORE THAN ONE NLYS FILE FOUND, PROCEDING WITH: " + nlys_files[0])
     
@@ -69,6 +91,8 @@ def parse_pop_info_for_flow_dir(flow_directory):
   
   os.system('plutil -convert xml1 -o ' + xml_filename + ' ' + nlys_filename)
   
+  plist = ccl_bplist.load(open(nlys_filename, 'rb'))
+  object_table = plist['$objects']
 
   xml_file = open(xml_filename, 'r')
   xml_lines = xml_file.readlines() 
@@ -115,6 +139,27 @@ def parse_pop_info_for_flow_dir(flow_directory):
       pop_number_dict[filename] = {pop_number_strings[i]: int(pop_nums[i])}
     else: 
       pop_number_dict[filename][pop_number_strings[i]] = int(pop_nums[i])
+      
+  # Resolve unfound populations
+  pop_num_dict_keys = list(pop_number_dict.keys())
+  found_keys = list(pop_number_dict[pop_num_dict_keys[0]].keys()) + \
+               list(pop_number_dict[pop_num_dict_keys[1]].keys())
+
+  for population in populations: 
+    if population not in found_keys: 
+      number_lines = [population + ":Number" in line for line in xml_lines]
+      number_line_idx =  [i for i, x in enumerate(number_lines) if x][0]
+      ## TODO: Could make this more robust by searching for last ANValue tag
+      pop_number_string =  re.search('integer>.*<', xml_lines[number_line_idx-3])
+      try: 
+        pop_uid = int(pop_number_string.group(0)[8:-1])
+        pop_num = object_table[pop_uid]
+        # Figure out which M1/M2 it belongs to 
+        assoc_filename_line = max(filter(lambda filename_line_idx: filename_line_idx < number_line_idx, filename_line_idxs))
+        filename = filenames[filename_line_idxs.index(assoc_filename_line)]
+        pop_number_dict[filename][population] = int(pop_num)
+      except: 
+        pass
       
   simplified_pop_number_dict = {}
 
