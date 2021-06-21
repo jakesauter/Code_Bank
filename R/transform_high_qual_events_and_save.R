@@ -116,10 +116,12 @@ for (i in seq_along(flow_directories)) {
   m1_meta <- pData(parameters(m1_fcs_dat))
   m1_param_names <- as.character(m1_meta$name)
   m1_cols_to_transform <- m1_param_names[c(1:4, which(!is.na(m1_meta$desc)))]
+  m1_cols_to_transform <- unname(m1_cols_to_transform)
   
   m2_meta <- pData(parameters(m2_fcs_dat))
   m2_param_names <- as.character(m2_meta$name)
-  m2_cols_to_transform <- m2_meta$name[c(1:4, which(!is.na(m2_meta$desc)))]
+  m2_cols_to_transform <- m2_param_names[c(1:4, which(!is.na(m2_meta$desc)))]
+  m2_cols_to_transform <- unname(m2_cols_to_transform)
   
   
   exprs(m1_fcs_dat) <- exprs(m1_fcs_dat)[, c(m1_cols_to_transform, 'Time')]
