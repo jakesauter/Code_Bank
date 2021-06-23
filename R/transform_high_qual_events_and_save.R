@@ -10,6 +10,7 @@ library(stringr)
 library(magrittr)
 library(flowCore)
 library(flowStats)
+library(flowTrans)
 
 filter <- dplyr::filter
 
@@ -24,8 +25,6 @@ flow_dir_save_loc <-
 flow_directories <- 
   list.files(flow_dir_save_loc, 
              full.names = TRUE)
-
-flow_directories <- sample(flow_directories, 10)
 
 qc_results_list <- vector('list', length(flow_directories))
 
@@ -68,7 +67,6 @@ full_qc_results <-
 #====================================================
 # Reading in High Quality M1 files 
 #---------------------------------------------------
-
 flow_dirs_passed_qc <- 
   full_qc_results %>% 
   filter(total_filtered_perc < 80) %>% 
@@ -84,12 +82,13 @@ for (i in seq_along(flow_directories)) {
   
   flow_directory <- flow_directories[[i]]
   cat("\n\nFlow Directory: ", flow_directory, "\n\n")
-  
+
   fcs_files <- 
     list.files(flow_directory, 
                pattern = "\\.fcs") %>% 
     .[str_detect(., 'compensated')] %>% 
-    .[str_detect(., 'high_quality_events')]
+    .[str_detect(., 'high_quality_events')] %>% 
+    .[!str_detect(., 'transformed')]
   
   m1_fcs_file <- 
     str_detect(fcs_files, 
@@ -103,10 +102,15 @@ for (i in seq_along(flow_directories)) {
     fcs_files[.] %>% 
     file.path(flow_directory, .)
   
-
+  cat('Reading FCS File: ', m1_fcs_file, '\n')
+  
+  
   m1_fcs_dat <- 
     flowCore::read.FCS(m1_fcs_file, 
                        transformation = FALSE)
+  
+  cat('Reading FCS File: ', m2_fcs_file, '\n')
+  
   
   m2_fcs_dat <- 
     flowCore::read.FCS(m2_fcs_file, 
@@ -123,43 +127,62 @@ for (i in seq_along(flow_directories)) {
   m2_cols_to_transform <- m2_param_names[c(1:4, which(!is.na(m2_meta$desc)))]
   m2_cols_to_transform <- unname(m2_cols_to_transform)
   
-  
   exprs(m1_fcs_dat) <- exprs(m1_fcs_dat)[, c(m1_cols_to_transform, 'Time')]
+  rownames(parameters(m1_fcs_dat)) <- paste0('$P', seq_len(ncol(exprs(m1_fcs_dat))))
+  
   exprs(m2_fcs_dat) <- exprs(m2_fcs_dat)[, c(m2_cols_to_transform, 'Time')]
+  rownames(parameters(m2_fcs_dat)) <- paste0('$P', seq_len(ncol(exprs(m2_fcs_dat))))
   
   
-  m1_fcs_dat <- 
-    flowTrans::flowTrans(m1_fcs_dat,
-                         'mclMultivArcSinh',
-                         m1_cols_to_transform, 
-                         FALSE,
-                         FALSE)$result
+  # m1_fcs_dat <- 
+  #   flowTrans(m1_fcs_dat,
+  #            'mclMultivArcSinh',
+  #             m1_cols_to_transform, 
+  #             n2f = TRUE,
+  #             parameters.only = FALSE)$result
+  # 
+  # 
+  # m2_fcs_dat <- 
+  #   flowTrans(m2_fcs_dat,
+  #            'mclMultivArcSinh',
+  #             m2_cols_to_transform, 
+  #             n2f = TRUE,
+  #             parameters.only = FALSE)$result
   
-  m2_fcs_dat <- 
-    flowTrans::flowTrans(m2_fcs_dat,
-                         'mclMultivArcSinh',
-                         m2_cols_to_transform, 
-                         FALSE,
-                         FALSE)$result
+  tl <-
+    flowCore::transformList(from = m1_cols_to_transform,
+                            tfun = function(x) asinh(x/150),
+                            transformationId = 'M1')
+  m1_fcs_dat <-
+    flowCore::transform(m1_fcs_dat, tl)
   
+  tl <-
+    flowCore::transformList(from = m2_cols_to_transform,
+                            tfun = function(x) asinh(x/150),
+                            transformationId = 'M2')
+  m2_fcs_dat <-
+    flowCore::transform(m2_fcs_dat, tl)
+  
+
   # Save
-  m1_transformed_fcs_file <- 
-    m1_fcs_file %>% 
-    str_split('.fcs') %>% 
-    .[[1]] %>% .[1] %>% 
-    str_c('_and_transformed.fcs')  
-  
-  m2_transformed_fcs_file <- 
-    m2_fcs_file %>% 
-    str_split('.fcs') %>% 
-    .[[1]] %>% .[1] %>% 
-    str_c('_and_transformed.fcs')  
+  m1_transformed_fcs_file <-
+    m1_fcs_file %>%
+    str_split('.fcs') %>%
+    .[[1]] %>% .[1] %>%
+    str_c('_asinh_transformed.fcs')
+
+  m2_transformed_fcs_file <-
+    m2_fcs_file %>%
+    str_split('.fcs') %>%
+    .[[1]] %>% .[1] %>%
+    str_c('_asinh_transformed.fcs')
   
   flowCore::write.FCS(m1_fcs_dat, 
                       m1_transformed_fcs_file)
   
   flowCore::write.FCS(m2_fcs_dat, 
                       m2_transformed_fcs_file)
+
 }
 
 
