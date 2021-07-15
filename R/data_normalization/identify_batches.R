@@ -1,14 +1,5 @@
 #!/bin/Rscript
 
-
-### Input data
-flow_dir_save_loc <- 
-  "/Users/sauterj1/Documents/Woodlist/Flow_Folders"
-
-patient_df <- 
-  read.csv('~/Documents/Woodlist/Input_Flow_DFs/jake_processed_flow_df_ids_052621.csv', 
-           stringsAsFactors = FALSE)
-
 library(dplyr)
 library(ggplot2)
 library(stringr)
@@ -17,18 +8,22 @@ library(flowCore)
 library(flowStats)
 library(patchwork)
 library(lubridate)
+library(stringr)
 library(knitr)
 
 filter <- dplyr::filter
 
-flow_directories <- 
+### Input data
+patient_df <- 
+  read.csv('~/Documents/Woodlist/Input_Flow_DFs/jake_processed_flow_df_ids_052621.csv', 
+           stringsAsFactors = FALSE) 
+
+patient_df <- 
   patient_df %>% 
   filter(Exclusion.Reason == "Not Excluded", 
-         !str_detect(Flow.Data.Folder, ','), 
          !str_detect(M1_path, ','), 
-         !str_detect(M2_path, ',')) %>% 
-  .$Flow.Data.Folder
-  
+         !str_detect(M2_path, ','))
+         
 
 
 m1_meta_info_list <- vector('list', length(flow_directories))
@@ -37,8 +32,7 @@ m2_meta_info_list <- vector('list', length(flow_directories))
 parse_meta_info <- function(parsed_meta) {
   baseline_date      <- parsed_meta$`CST BASELINE DATE` %>% 
     str_split('T') %>% .[[1]] %>% .[1]
-  
-  
+
   setup_date         <- parsed_meta$`CST SETUP DATE` %>% 
     str_split('T') %>% .[[1]] %>% .[1]
   
@@ -81,44 +75,30 @@ parse_meta_info <- function(parsed_meta) {
   meta_info_list
 }
 
-for (i in seq_along(flow_directories)) {
+for (i in seq_len(nrow(patient_df))) {
   
-  flow_directory <- flow_directories[i]
+  flow_directory <- patient_df[i, "Flow.Data.Folder"]
   
-  cat('Processing flow directory:', i, 'out of:', length(flow_directories))
+  cat('Processing flow directory:', i, 'out of:', nrow(patient_df))
   cat('\nFlow directory: ', flow_directory, '\n\n')
   
-  
-  fcs_files <- 
-    list.files(flow_directory, 
-               pattern = "\\.fcs") %>% 
-    .[!str_detect(., 'compensated')] %>% 
-    .[!str_detect(., 'high_quality_events')] %>% 
-    .[!str_detect(., 'transformed')] %>% 
-    .[!str_detect(., 'singlets')] 
-  
   m1_fcs_file <- 
-    str_detect(fcs_files, 
-               'M1|m1') %>% 
-    fcs_files[.] %>% 
-    file.path(flow_directory, .)
+    patient_df[i, "M1_path"]
   
   m2_fcs_file <- 
-    str_detect(fcs_files, 
-               'M2|m2') %>% 
-    fcs_files[.] %>% 
-    file.path(flow_directory, .)
-  
+    patient_df[i, "M2_path"]
   
   parsed_meta <- description(read.FCS(m1_fcs_file, 
                                       transformation = FALSE, 
                                       which.lines = 1))
+  
   
   m1_meta_info_list[[i]] <- parse_meta_info(parsed_meta)
   
   parsed_meta <- description(read.FCS(m2_fcs_file, 
                                       transformation = FALSE, 
                                       which.lines = 1))
+  
   m2_meta_info_list[[i]] <- parse_meta_info(parsed_meta)
  
 }
@@ -127,47 +107,25 @@ m1_meta_info_df <-
   do.call(rbind, m1_meta_info_list) %>% 
   as.data.frame() %>% 
   mutate(
-    date = date %>% 
-      str_replace_all('JAN', '1') %>% 
-      str_replace_all('FEB', '2') %>% 
-      str_replace_all('MAR', '3') %>% 
-      str_replace_all('APR', '4') %>% 
-      str_replace_all('MAY', '5') %>% 
-      str_replace_all('JUN', '6') %>% 
-      str_replace_all('JUL', '7') %>% 
-      str_replace_all('AUG', '8') %>% 
-      str_replace_all('SEP', '9') %>% 
-      str_replace_all('OCT', '10') %>% 
-      str_replace_all('NOV', '11') %>% 
-      str_replace_all('DEC', '12') %>% 
-      lubridate::dmy()
-  ) %>% 
+    date = lubridate::dmy(date)) %>% 
   mutate(baseline_date = lubridate::ymd(baseline_date), 
-         setup_date = lubridate::ymd(setup_date)) %>% 
+         setup_date = lubridate::ymd(setup_date), 
+         flow_id = patient_df$Accession.Number) %>% 
   arrange(cyt_num, date, baseline_date, setup_date)
 
 m2_meta_info_df <- 
   do.call(rbind, m2_meta_info_list) %>% 
   as.data.frame() %>% 
   mutate(
-    date = date %>% 
-      str_replace_all('JAN', '1') %>% 
-      str_replace_all('FEB', '2') %>% 
-      str_replace_all('MAR', '3') %>% 
-      str_replace_all('APR', '4') %>% 
-      str_replace_all('MAY', '5') %>% 
-      str_replace_all('JUN', '6') %>% 
-      str_replace_all('JUL', '7') %>% 
-      str_replace_all('AUG', '8') %>% 
-      str_replace_all('SEP', '9') %>% 
-      str_replace_all('OCT', '10') %>% 
-      str_replace_all('NOV', '11') %>% 
-      str_replace_all('DEC', '12') %>% 
-      lubridate::dmy()
-  ) %>% 
+    date = lubridate::dmy(date)) %>% 
   mutate(baseline_date = lubridate::ymd(baseline_date), 
-         setup_date = lubridate::ymd(setup_date)) %>% 
+         setup_date = lubridate::ymd(setup_date), 
+         flow_id = patient_df$Accession.Number) %>% 
   arrange(cyt_num, date, baseline_date, setup_date)
+
+
+saveRDS(m1_meta_info_df, 'data/m1_meta_info_df.Rds')
+saveRDS(m2_meta_info_df, 'data/m2_meta_info_df.Rds')
 
 
 
@@ -238,7 +196,7 @@ sorted_meta_info_df %>%
 # make plot -- time on x axis, machine on y axis, 
 # heatmap value of how many uses
 
-p1 <- 
+p1 <-
   m1_meta_info_df %>% 
   mutate(date = floor_date(date, 'quarter'),  
          cyt_num = as.character(cyt_num), 
@@ -254,7 +212,7 @@ p1 <-
   ggtitle("M1 Cytometers Used Over Time") + 
   theme(legend.position = 'None')
 
-p2 <- 
+p2 <-
   m2_meta_info_df %>% 
   mutate(date = floor_date(date, 'quarter'), 
          cyt_num = as.character(cyt_num), 
@@ -338,8 +296,7 @@ p4 <-
   ggtitle("Channels Over Time")
 
 
-p4 / p1
-
+p3 / p4
 
 
 # marker names over time 
@@ -380,11 +337,7 @@ p6 <-
   theme(legend.position = 'None')
 
 
-p1 / p5
-
-p3
-
-p2 / p6
+p5 / p6
 
 ###################
 # Baseline dates
@@ -463,6 +416,108 @@ p2 <- m1_meta_info_df %>%
   theme(legend.position = 'None')
 
 p1 / p3 / p2
+
+
+
+factored_config_name <-
+  m1_meta_info_df %>% 
+  select(config_create_date,
+         config_name) %>% 
+  mutate(config_create_date = lubridate::ymd(config_create_date)) %>% 
+  arrange(config_create_date) %>% 
+  .$config_name %>% 
+  str_replace_all('-', ' ') %>% 
+  unlist() %>% 
+  factor(levels = unique(.))
+
+
+m1_meta_info_df %>% 
+  mutate(cytometer = as.character(cytometer), 
+         config_name = factored_config_name, 
+         cyt_num = unlist(cyt_num)) %>% 
+  count(cyt_num, config_name) %>% 
+  mutate(config_name = as.integer(config_name)) %>% 
+  ggplot() + 
+  geom_tile(aes(x = config_name, y = cyt_num, fill = n)) + 
+  scale_x_continuous(breaks = 1:length(levels(factored_config_name)), 
+                     labels = levels(factored_config_name)) + 
+  geom_text(aes(x = config_name, y = cyt_num, label = n)) + 
+  scale_fill_distiller(palette = 'Reds', 
+                       direction = 1) + 
+  guides(fill = guide_legend(title = '# Flow Ids')) +
+  xlab('') + ylab('') + 
+  ggtitle("Cytometers and Config Names") + 
+  theme(legend.position = 'None', 
+        axis.text.x = element_text(angle = -35, hjust = 0), 
+        plot.margin=unit(c(.5,4.3,.5,.5),"cm"))
+
+
+
+
+
+# Need to confirm that the date of the experiments
+# that used varying configs for the Fortessa's
+# (12, 18) changed between 7/13/2020 and 10/5/2020
+
+
+m1_meta_info_df %>% 
+  select(config_create_date,
+         config_name) %>% 
+  mutate(config_create_date = lubridate::ymd(config_create_date)) %>% 
+  arrange(config_create_date) %>% 
+  count(config_create_date, config_name) %>% 
+  select(config_name, config_create_date) %>% 
+  kable()
+
+
+m1_meta_info_df <- 
+  m1_meta_info_df %>% 
+  rowwise() %>% 
+  mutate(num_params = length(param_names))
+
+m1_meta_info_df %>% 
+  mutate(cyt_num = unlist(cyt_num), 
+         config_name = unlist(config_name)) %>% 
+  count(cyt_num, num_params, config_name) %>% 
+  select(config_name, cyt_num, num_params) %>% 
+  arrange(num_params)
+
+
+# Config change by experiment date
+
+df <- 
+  m1_meta_info_df %>% 
+  group_by(cyt_num, config_name) %>% 
+  arrange(date) %>% 
+  slice_head(n = 1) %>% 
+  rename(earliest_exp_date = date) %>% 
+  ungroup() 
+
+
+exp_count <- 
+  m1_meta_info_df %>% 
+  count(cyt_num, config_name) %>% 
+  .$n
+
+latest_exp_date <- 
+  m1_meta_info_df %>% 
+  group_by(cyt_num, config_name) %>% 
+  arrange(date) %>% 
+  slice_tail(n = 1) %>% 
+  ungroup() %>% 
+  .$date
+
+df$latest_exp_date <- latest_exp_date
+df$n <- exp_count
+  
+
+df %>% 
+  arrange(earliest_exp_date) %>% 
+  mutate(cyt_num = unlist(cyt_num), 
+         config_name = unlist(config_name)) %>% 
+  select(cyt_num, earliest_exp_date, latest_exp_date, config_name, n) %>% 
+  arrange(cyt_num, earliest_exp_date) %>% 
+  kable()
 
 
 cyt_nums <- 

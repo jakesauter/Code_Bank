@@ -3,7 +3,7 @@
 
 ### Input data
 flow_dir_save_loc <- 
-  "/Users/sauterj1/Documents/Woodlist/Flow_Folders"
+  "/Users/sauterj1/Documents/Woodlist/Correct_QC_Flow_Folders/"
 
 
 library(dplyr)
@@ -55,49 +55,7 @@ is_single <- function(ff, plot = FALSE, ...) {
   return(selection)
 }
 
-for (i in seq_along(flow_directories)) {
-  
-  flow_directory <- flow_directories[[i]]
-  
-  # Parse and better save QC Results
-  qc_results <- 
-    read.table(file.path(flow_directory, 
-                         'flowAI_QC_Results',
-                         'QCmini.txt'), 
-               skip = 1, 
-               sep = '\t') %>% 
-    .[, c(1, 3, 5, 6, 7)] %>% 
-    set_colnames(c('filename', 
-                   'total_filtered_perc',
-                   'FR_filtered_perc', 
-                   'FS_filtered_perc', 
-                   'FM_filtered_perc (not used)'))
-  
-  qc_results$filename <-
-    file.path(flow_directory, qc_results$filename)
-  
-  
-  qc_results_list[[i]] <- qc_results
-  
-}
 
-full_qc_results <- do.call(rbind, qc_results_list)
-
-full_qc_results <- 
-  full_qc_results %>% 
-  dplyr::distinct() %>%
-  arrange(total_filtered_perc)
-
-flow_dirs_passed_qc <- 
-  full_qc_results %>% 
-  filter(total_filtered_perc < 80) %>% 
-  mutate(dirname = dirname(filename)) %>% 
-  count(dirname) %>% 
-  filter(n > 1) %>% 
-  .$dirname
-
-flow_directories <- 
-  flow_dirs_passed_qc
 
 
 for (i in seq_along(flow_directories)) {
@@ -110,7 +68,7 @@ for (i in seq_along(flow_directories)) {
                pattern = "\\.fcs") %>% 
     .[str_detect(., 'compensated')] %>% 
     .[str_detect(., 'high_quality_events')] %>% 
-    .[str_detect(., 'asinh_transformed')] %>% 
+    .[str_detect(., '_lin_and_asinh_transformed')] %>% 
     .[!str_detect(., 'singlets')]
   
   m1_fcs_file <- 
@@ -143,6 +101,10 @@ for (i in seq_along(flow_directories)) {
   
   exprs(m1_fcs_dat) <- exprs(m1_fcs_dat)[m1_singlet_events, ]
   exprs(m2_fcs_dat) <- exprs(m2_fcs_dat)[m2_singlet_events, ]
+  
+  cat(length(which(!m1_singlet_events))/length(m1_singlet_events), '% doublet events detected in M1\n')
+  cat(length(which(!m2_singlet_events))/length(m2_singlet_events), '% doublet events detected in M2\n')
+  
   
   ## Saving
   m1_transformed_fcs_file <- 

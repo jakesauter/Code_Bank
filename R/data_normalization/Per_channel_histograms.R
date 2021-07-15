@@ -1,11 +1,11 @@
 #!/bin/Rscript
 
 ### Output Location 
-pdf_dir <- '~/Documents/Patient_Folder_Analysis/transformed_KDE_pdfs/'
+pdf_dir <- '~/Documents/Patient_Folder_Analysis/optim_transformed_KDE_pdfs/'
 
 ### Input data
 flow_dir_save_loc <- 
-  "/Users/sauterj1/Documents/Woodlist/Flow_Folders"
+  "/Users/sauterj1/Documents/Woodlist/Correct_QC_Flow_Folders/"
 
 patient_df <- 
   read.csv('~/Documents/Woodlist/Input_Flow_DFs/jake_processed_flow_df_ids_052621.csv', 
@@ -88,7 +88,8 @@ for (i in seq_along(flow_directories)) {
                pattern = "\\.fcs") %>% 
     .[str_detect(., 'compensated')] %>% 
     .[str_detect(., 'high_quality_events')] %>% 
-    .[str_detect(., 'asinh_transformed')] %>% 
+    .[str_detect(., 'transformed')] %>% 
+    .[!str_detect(., 'asinh')] %>% 
     .[str_detect(., 'singlets')]
   
   m1_fcs_file <- 

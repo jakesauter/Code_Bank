@@ -1,7 +1,7 @@
 #!/bin/Rscript
 
 flow_dir_save_loc <- 
-  "/Users/sauterj1/Documents/Woodlist/Flow_Folders"
+  "/Users/sauterj1/Documents/Woodlist/Correct_QC_Flow_Folders/"
 
 
 library(dplyr)
@@ -14,69 +14,12 @@ library(flowTrans)
 
 filter <- dplyr::filter
 
-
-#====================================================
-# Gathering all QC Statistics
-#----------------------------------------------------
-
-flow_dir_save_loc <- 
-  "/Users/sauterj1/Documents/Woodlist/Flow_Folders"
-
-flow_directories <- 
-  list.files(flow_dir_save_loc, 
-             full.names = TRUE)
-
-qc_results_list <- vector('list', length(flow_directories))
-
-for (i in seq_along(flow_directories)) {
-  
-  flow_directory <- flow_directories[[i]]
-  
-  # Parse and better save QC Results
-  qc_results <- 
-    read.table(file.path(flow_directory, 
-                         'flowAI_QC_Results',
-                         'QCmini.txt'), 
-               skip = 1, 
-               sep = '\t') %>% 
-    .[, c(1, 3, 5, 6, 7)] %>% 
-    set_colnames(c('filename', 
-                   'total_filtered_perc',
-                   'FR_filtered_perc', 
-                   'FS_filtered_perc', 
-                   'FM_filtered_perc (not used)'))
-  
-  qc_results$filename <-
-    file.path(flow_directory, qc_results$filename)
-  
-  
-  qc_results_list[[i]] <- qc_results
-  
-}
-
-full_qc_results <- do.call(rbind, qc_results_list)
-
-full_qc_results <- 
-  full_qc_results %>% 
-  dplyr::distinct() %>%
-  arrange(total_filtered_perc)
-#====================================================
-
-
-
 #====================================================
 # Reading in High Quality M1 files 
 #---------------------------------------------------
-flow_dirs_passed_qc <- 
-  full_qc_results %>% 
-  filter(total_filtered_perc < 80) %>% 
-  mutate(dirname = dirname(filename)) %>% 
-  count(dirname) %>% 
-  filter(n > 1) %>% 
-  .$dirname
 
 flow_directories <- 
-  flow_dirs_passed_qc
+  list.dirs(flow_dir_save_loc, recursive = FALSE)
 
 for (i in seq_along(flow_directories)) {
   
@@ -119,42 +62,40 @@ for (i in seq_along(flow_directories)) {
   # Transform
   m1_meta <- pData(parameters(m1_fcs_dat))
   m1_param_names <- as.character(m1_meta$name)
-  m1_cols_to_transform <- m1_param_names[c(1:4, which(!is.na(m1_meta$desc)))]
+  m1_cols_to_transform <- m1_param_names[which(!is.na(m1_meta$desc))]
   m1_cols_to_transform <- unname(m1_cols_to_transform)
+  m1_cols_to_transform <- c('SSC-A', 'SSC-H', m1_cols_to_transform)
   
   m2_meta <- pData(parameters(m2_fcs_dat))
   m2_param_names <- as.character(m2_meta$name)
-  m2_cols_to_transform <- m2_param_names[c(1:4, which(!is.na(m2_meta$desc)))]
+  m2_cols_to_transform <- m2_param_names[which(!is.na(m2_meta$desc))]
   m2_cols_to_transform <- unname(m2_cols_to_transform)
+  m2_cols_to_transform <- c('SSC-A', 'SSC-H', m2_cols_to_transform)
   
-  exprs(m1_fcs_dat) <- exprs(m1_fcs_dat)[, c(m1_cols_to_transform, 'Time')]
+  exprs(m1_fcs_dat) <- exprs(m1_fcs_dat)[, c('FSC-A', 'FSC-H', 
+                                             m1_cols_to_transform)]
   rownames(parameters(m1_fcs_dat)) <- paste0('$P', seq_len(ncol(exprs(m1_fcs_dat))))
   
-  exprs(m2_fcs_dat) <- exprs(m2_fcs_dat)[, c(m2_cols_to_transform, 'Time')]
+  exprs(m2_fcs_dat) <- exprs(m2_fcs_dat)[, c('FSC-A', 'FSC-H', 
+                                             m2_cols_to_transform)]
   rownames(parameters(m2_fcs_dat)) <- paste0('$P', seq_len(ncol(exprs(m2_fcs_dat))))
   
-  
-  # m1_fcs_dat <- 
-  #   flowTrans(m1_fcs_dat,
-  #            'mclMultivArcSinh',
-  #             m1_cols_to_transform, 
-  #             n2f = TRUE,
-  #             parameters.only = FALSE)$result
-  # 
-  # 
-  # m2_fcs_dat <- 
-  #   flowTrans(m2_fcs_dat,
-  #            'mclMultivArcSinh',
-  #             m2_cols_to_transform, 
-  #             n2f = TRUE,
-  #             parameters.only = FALSE)$result
-  
+
   tl <-
     flowCore::transformList(from = m1_cols_to_transform,
                             tfun = function(x) asinh(x/150),
                             transformationId = 'M1')
   m1_fcs_dat <-
     flowCore::transform(m1_fcs_dat, tl)
+  
+  exprs(m1_fcs_dat)[, 'FSC-A'] <- 
+    exprs(m1_fcs_dat)[, 'FSC-A'] %>% 
+    {. / max(.) * 8.159}
+  
+  exprs(m1_fcs_dat)[, 'FSC-H'] <- 
+    exprs(m1_fcs_dat)[, 'FSC-H'] %>% 
+    {. / max(.) * 8.159}
+  
   
   tl <-
     flowCore::transformList(from = m2_cols_to_transform,
@@ -163,19 +104,27 @@ for (i in seq_along(flow_directories)) {
   m2_fcs_dat <-
     flowCore::transform(m2_fcs_dat, tl)
   
-
+  exprs(m2_fcs_dat)[, 'FSC-A'] <- 
+    exprs(m2_fcs_dat)[, 'FSC-A'] %>% 
+    {. / max(.) * 8.159}
+  
+  exprs(m2_fcs_dat)[, 'FSC-H'] <- 
+    exprs(m2_fcs_dat)[, 'FSC-H'] %>% 
+    {. / max(.) * 8.159}
+  
+  
   # Save
   m1_transformed_fcs_file <-
     m1_fcs_file %>%
     str_split('.fcs') %>%
     .[[1]] %>% .[1] %>%
-    str_c('_asinh_transformed.fcs')
+    str_c('_lin_and_asinh_transformed.fcs')
 
   m2_transformed_fcs_file <-
     m2_fcs_file %>%
     str_split('.fcs') %>%
     .[[1]] %>% .[1] %>%
-    str_c('_asinh_transformed.fcs')
+    str_c('_lin_and_asinh_transformed.fcs')
   
   flowCore::write.FCS(m1_fcs_dat, 
                       m1_transformed_fcs_file)
@@ -184,8 +133,6 @@ for (i in seq_along(flow_directories)) {
                       m2_transformed_fcs_file)
 
 }
-
-
 
 
 
