@@ -2,35 +2,38 @@ library(FlowSOM)
 library(stringr)
 library(magrittr)
 
-m1_som <- readRDS('data/m1_som_100_cells_per_patient_30_clus.Rds')
+m1_som <- readRDS('data/10_by_10_SOM_empirical_num_clusters.Rds')
 
-m1_som$FlowSOM$map$xdim
-m1_som$FlowSOM$map$ydim
-
-end_slice_idxs <- 
-  m1_som$FlowSOM$prettyColnames %>% 
-  str_locate("<") %>% .[, 1] 
-  
-m1_som$FlowSOM$prettyColnames <-
-  sapply(seq_along(end_slice_idxs), 
-         function(idx) m1_som$FlowSOM$prettyColnames[idx] %>% 
-           str_sub(1, end_slice_idxs[idx]-2))
-
+FlowSOM::NMetaclusters(m1_som)
 fsom <- m1_som
 
-fsom$FlowSOM$MST$size <- m1_som$FlowSOM$MST$size / 2
-fsom$FlowSOM$MST$size <-  2
+end_slice_idxs <- 
+  m1_som$prettyColnames %>% 
+  str_locate("<") %>% .[, 1] 
+  
+names_colnames <- 
+  names(m1_som$prettyColnames)
 
-PlotStars(fsom$FlowSOM, 
-          backgroundValues = fsom$metaclustering)
+fsom$prettyColnames <-
+  sapply(seq_along(end_slice_idxs), 
+         function(idx) m1_som$prettyColnames[idx] %>% 
+           str_sub(1, end_slice_idxs[idx]-2))
 
-PlotStars(m1_som$FlowSOM, 
-          backgroundValues = m1_som$metaclustering, 
-          view = 'grid')
+names(fsom$prettyColnames) <- 
+  names_colnames
 
-fsom$FlowSOM$MST$size <- 3
+PlotStars(fsom,
+          backgroundValues = m1_som$metaclustering)
 
-PlotStars(fsom$FlowSOM, 
-          backgroundValues = m1_som$metaclustering, 
-          view = 'tSNE')
+
+
+FlowSOM::FlowSOMmary(fsom, 
+                     plotFile = '10_by_10_SOMmary.pdf')
+
+
+PlotFlowSOM(fsom, view = 'MST', equalNodeSize = TRUE, 
+            title = "FlowSOM Metaclusters") %>% 
+    AddNodes(values = fsom$metaclustering, 
+             showLegend = TRUE, label = "Metaclusters") %>% 
+    AddLabels(labels = fsom$metaclustering)
 

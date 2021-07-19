@@ -8,71 +8,14 @@ library(RColorBrewer)
 
 filter <- dplyr::filter
 
+seurat_object <- 
+  readRDS('data/umap_seurat_object_with_metaclusters.Rds')
 
-m1_som <- 
-  readRDS('data/m1_som_100_cells_per_patient.Rds')
-
-flow_ids <- 
-  read.table('data/filename_order_100k_per_patient.csv', 
-             sep = ',') %>% 
-  unlist() %>% 
-  str_extract('F[0-9\\-]+$')
-
-patient_df <- 
-  read.csv('~/Documents/Woodlist/Input_Flow_DFs/jake_processed_flow_df_ids_052621.csv', 
-           stringsAsFactors = FALSE)
-
-patient_df <- 
-  patient_df %>% 
-  filter(Exclusion.Reason == "Not Excluded", 
-         !str_detect(Flow.Data.Folder, ','), 
-         !str_detect(M1_path, ','), 
-         !str_detect(M2_path, ',')) 
-
-
-## Getting patient df in the same order
-# as cells generated in the SOM 
-patient_df <- 
-  patient_df %>% 
-  filter(Accession.Number %in% flow_ids)
-
-
-rownames(patient_df) <- 
-  patient_df$Accession.Number
-
-patient_df <- 
-  patient_df[flow_ids, ]
-
-# Now get the cells to metacluster
-# mapping
-cells_to_cluster_mapping <- 
-  FlowSOM::GetClusters(m1_som)
-
-cluster_to_metacluster_mapping <- 
-  m1_som$metaclustering
-
-cells_to_metacluster_mapping <- 
-  cells_to_cluster_mapping %>% 
-  cluster_to_metacluster_mapping[.]
-
-
-# Now associdate each cell to the disease the 
-# patient it came from had 
-
-cells_to_disease_mapping <- 
-  patient_df$CbioPortal.Cancer.Type  %>% 
-  lapply(function(x) rep(x, 100e3)) %>% 
-  unlist()
-
-cells_to_specific_disease_mapping <- 
-  patient_df$CbioPortal.Cancer.Type.Detailed  %>% 
-  lapply(function(x) rep(x, 100e3)) %>% 
-  unlist()
-
+metadata <- 
+  seurat_object@meta.data
 
 detailed_cancer_types <- 
-  patient_df$CbioPortal.Cancer.Type.Detailed %>% 
-  unique()
+  metadata$cancer_type_detailed
 
 high_level_cancer_types <- 
   vector('character', length(detailed_cancer_types))

@@ -1,11 +1,8 @@
 
-library(arrow)
 library(dplyr)
-library(stringr)
 library(magrittr)
 library(flowCore)
 library(FlowSOM)
-library(RColorBrewer)
 
 filter <- dplyr::filter
 
@@ -45,23 +42,30 @@ m1_fcs_ff <-
 
 
 m1_som <- FlowSOM::FlowSOM(m1_fcs_ff,
-                           xdim = 10,
-                           ydim = 10,
-                           nClus = 10,
+                           xdim = 7,
+                           ydim = 7,
+                           maxMeta = 40,
                            colsToUse = seq_len(ncol(m1_fcs_data_list[[1]])))
 
-bmp('10_by_10_metaclustering_elbow_curve.bmp', 
-    width = 1280, 
-    height = 800)
+bmp('7_by_7_metaclustering_elbow_curve.bmp', 
+    width = 640, 
+    height = 400)
 
-m1_som <- 
+meta_clustering <- 
   FlowSOM::MetaClustering(
     data = m1_som$map$codes, 
     method = "metaClustering_consensus", 
-    max = 50, 
+    max = 40, 
     seed = 497, 
     plot = TRUE)
 
+
 dev.off()
 
-saveRDS(m1_som, '10_by_10_SOM_chosen_clusters.Rds')
+saveRDS(meta_clustering, 
+        '7_by_7_metaclustering_results.Rds')
+
+
+cat('\n\nDetermined number of metaclusters is: ', FlowSOM::NMetaclusters(m1_som))
+
+saveRDS(m1_som, '7_by_7_SOM_empirical_num_clusters.Rds')
