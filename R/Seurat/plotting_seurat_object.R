@@ -6,7 +6,7 @@ library(patchwork)
 filter <- dplyr::filter
 
 seurat_object <- 
-  readRDS('data/umap_seurat_object.Rds')
+  readRDS('data/umap_seurat_object_with_7_by_7_SOM_metaclusters.Rds')
 
 flow_ids <- seurat_object[[]]$flow_dir
 
@@ -58,9 +58,9 @@ bmp('images/seurat_umap.bmp',
 
 # Plot 
 Seurat::DimPlot(
-  seurat_object, 
-  reduction = 'umap', 
-  pt.size = 0.1, 
+  seurat_object,
+  reduction = 'umap',
+  pt.size = 0.1,
   group.by = 'flow_cytometer')
 
 dev.off()
@@ -197,11 +197,36 @@ plot_umap(umap_points,
 dev.off()
 
 
-bmp('images/seurat_feature_plot.bmp', 
-    width = 1280, 
+
+
+bmp('images/seurat_louvain_feature_plot.bmp',
+    width = 1280,
     height = 800)
 
-FeaturePlot(seurat_object, 
-            features = rownames(seurat_object))
+Idents(seurat_object) <-
+  factor(seurat_object@meta.data$louvain_clusters)
+
+p <- FeaturePlot(seurat_object,
+                 features = rownames(seurat_object),
+                 cols = rev(RColorBrewer::brewer.pal(11, 'RdBu')))
+
+p
 
 dev.off()
+
+
+
+
+
+p <-
+  DotPlot(seurat_object,
+        features = tail(rownames(seurat_object), -4),
+        # split.by = 'metacluster',
+        dot.scale = 4,
+        col.min = -5,
+        col.max = 5)
+
+
+p + ylab('Community')
+
+p

@@ -15,6 +15,13 @@ seurat_object <-
 umap_points <- 
   seurat_object@reductions$umap@cell.embeddings
 
+louvain_clusters <- 
+  arrow::read_feather('data/louvain_clustering_results.feather')
+
+seurat_object@meta.data$louvain_clusters <- 
+  louvain_clusters %>% 
+  unlist()
+
 # Define function to plot UMAP results
 plot_umap <- function(points,
                       labels,
@@ -37,61 +44,60 @@ plot_umap <- function(points,
   
   points(points[,1], points[,2], col=trans_colors[as.integer(labels)],
          cex=cex, pch=pch)
-  
-  labels.u = levels(labels)
-  legend.pos = "topleft"
-  legend.text = as.character(labels.u)
-  
-  legend(legend.pos, legend=legend.text, inset=0.03,
-         col=colors[seq_along(labels.u)],
-         bty="n", pch=pch, cex = 1.5, pt.cex = 3.2)
-  
 }
 
-labels <- seurat_object@meta.data$metacluster
+labels <- seurat_object@meta.data$louvain_clusters
 labels <- factor(labels)
 
 
-# 7x7 color palette
 colors <-
-  c("#e07200",
-     "#4a80ff",
-     "#ae9500",
-     "#002e9f",
-     "#00bf67",
-     "#820093",
-     "#4c7400",
-     "#ff6fe7",
-     "#b20500",
-     "#004584",
-     "#fa8d69",
-     "#e293bd",
-     "#6e2107")
-
-# colors <- 
-#   c("#a60051",
-#      "#eac302",
-#      "#0080fc",
-#      "#ff8c0d",
-#      "#003e9b",
-#      "#d74800",
-#      "#a585ff",
-#      "#3a6100",
-#      "#ff69ff",
-#      "#e3c376",
-#      "#ea019b",
-#      "#00726c",
-#      "#ffa5fb",
-#      "#670006",
-#      "#015e8c",
-#      "#efb7c7")
+  c("#45286c",
+    "#443248",
+    "#592aae",
+    "#64432e",
+    "#3a5144",
+    "#973a53",
+    "#5f4faa",
+    "#54692b",
+    "#b73995",
+    "#c7423f",
+    "#606be5",
+    "#d9472b",
+    "#ad4be3",
+    "#d5437f",
+    "#bb6152",
+    "#b17232",
+    "#d84ac5",
+    "#6186d5",
+    "#ea5a17",
+    "#bb74a5",
+    "#ad74db",
+    "#9a8fc1",
+    "#57a0cf",
+    "#c88c9b",
+    "#77a3b6",
+    "#cf85d0",
+    "#dd9628",
+    "#60b88c",
+    "#bba6a4",
+    "#75bd58",
+    "#cfa971",
+    "#b0b28a",
+    "#bdb549",
+    "#7acd49",
+    "#59d087",
+    "#53ccc5",
+    "#a0c2b0",
+    "#bacd84",
+    "#86e63a",
+    "#dad833")
 
 
 # I think for the UMAP I might stick to 
 # my manual way of plotting
-bmp('images/seurat_umap_with_7_by_7_SOM_metaclusters.bmp', 
+bmp('images/seurat_umap_with_louvain_clusters.bmp', 
     width = 800, 
-    height = 500)
+    height = 600)
 
 plot_umap(umap_points, 
           labels = labels, 
@@ -99,4 +105,16 @@ plot_umap(umap_points,
           alpha = 0.35)
 
 dev.off()
+
+
+# saveRDS(seurat_object, 'data/seurat_object_with_louvain_clusters.Rds')
+
+
+
+
+
+
+
+
+
 

@@ -2,7 +2,7 @@ library(FlowSOM)
 library(stringr)
 library(magrittr)
 
-m1_som <- readRDS('data/10_by_10_SOM_empirical_num_clusters.Rds')
+m1_som <- readRDS('data/7_by_7_SOM_empirical_num_clusters.Rds')
 
 FlowSOM::NMetaclusters(m1_som)
 fsom <- m1_som
@@ -31,9 +31,25 @@ FlowSOM::FlowSOMmary(fsom,
                      plotFile = '10_by_10_SOMmary.pdf')
 
 
-PlotFlowSOM(fsom, view = 'MST', equalNodeSize = TRUE, 
-            title = "FlowSOM Metaclusters") %>% 
+p <- PlotFlowSOM(fsom, view ='MST', 
+            equalNodeSize = TRUE, 
+            title = "FlowSOM Metaclusters") %>%
     AddNodes(values = fsom$metaclustering, 
-             showLegend = TRUE, label = "Metaclusters") %>% 
+             showLegend = TRUE, label = "Metaclusters", 
+             colorPalette = c("#e07200",
+                                   "#4a80ff",
+                                   "#ae9500",
+                                   "#002e9f",
+                                   "#00bf67",
+                                   "#820093",
+                                   "#4c7400",
+                                   "#ff6fe7",
+                                   "#b20500",
+                                   "#004584",
+                                   "#fa8d69",
+                                   "#e293bd",
+                                   "#6e2107")) %>%
     AddLabels(labels = fsom$metaclustering)
 
+
+p

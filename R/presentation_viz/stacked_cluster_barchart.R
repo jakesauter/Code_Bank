@@ -1,5 +1,6 @@
 # library
 library(ggplot2)
+library(dplyr)
 library(viridis)
 library(hrbrthemes)
 
@@ -9,7 +10,8 @@ seurat_object <-
 
 # Plot the breakdown of disease per cluster 
 metadata <- 
-  seurat_object@meta.data
+  seurat_object@meta.data %>% 
+  mutate(metacluster = leiden_clusters)
 
 total_cells_per_disease <- 
   metadata$cancer_type %>% 
@@ -24,7 +26,7 @@ metadata <-
   
 cell_count_per_cluster <- 
   seurat_object@meta.data %>% 
-  mutate(metacluster = as.integer(metacluster)) %>% 
+  mutate(metacluster = as.integer(leiden_clusters)) %>% 
   count(metacluster) %>% 
   mutate(n = format(round(as.numeric(n), 1), big.mark=","))
 
@@ -36,10 +38,11 @@ metadata %>%
   ggplot() + 
   geom_bar(aes(fill=cancer_type, y=n, x=metacluster), 
            position="stack", stat="identity") +
-  scale_fill_manual(values = c("#77d1e5",
-                               "#e8b8a1",
-                               "#c6b6e5",
-                               "#b0d9b1")) +
+  # scale_fill_manual(values = c("#77d1e5",
+  #                              "#e8b8a1",
+  #                              "#c6b6e5",
+  #                              "#b0d9b1")) +
+  scale_fill_brewer(palette = 'Paired') + 
   geom_text(data = cell_count_per_cluster, 
             aes(x = metacluster - 0.3, y = 1.05, label=n), 
             size = 3, 
@@ -64,7 +67,8 @@ metadata %>%
 # Lets make a heatmap of cancer type / cancer type detailed by
 # metacluster
 metadata <- 
-  seurat_object@meta.data
+  seurat_object@meta.data %>% 
+  mutate(metacluster = leiden_clusters)
 
 total_cells_per_disease <- 
   metadata$cancer_type_detailed %>% 
@@ -84,7 +88,7 @@ max_metacluster <-
 
 cell_count_per_cluster <- 
   seurat_object@meta.data %>% 
-  mutate(metacluster = as.integer(metacluster)) %>% 
+  mutate(metacluster = as.integer(leiden_clusters)) %>% 
   count(metacluster) %>% 
   mutate(n = format(round(as.numeric(n), 1), big.mark=","))
 
@@ -147,80 +151,5 @@ metadata %>%
 
 
 
-## Lets also make the presentation quality heatmap here
-metadata <- 
-  seurat_object@meta.data
 
-total_cells_per_disease <- 
-  metadata$cancer_type %>% 
-  table()
-
-metadata %>% 
-  count(metacluster, cancer_type) %>% 
-  rowwise() %>% 
-  mutate(n = n / total_cells_per_disease[cancer_type])
-
-
-
-
-# Lets make a heatmap of cancer type / cancer type detailed by
-# metacluster
-total_cells_per_disease <- 
-  metadata$cancer_type_detailed %>% 
-  table()
-
-patient_count_per_disease <- 
-  seurat_object@meta.data %>% 
-  count(cancer_type_detailed) %>% 
-  mutate(n = n / 100e3) %>% 
-  mutate(n = format(round(as.numeric(n), 1), big.mark=","))
-
-max_metacluster <- 
-  metadata$metacluster %>% 
-  as.integer() %>% 
-  max()
-
-num_diseases <- 
-  metadata$cancer_type_detailed %>% 
-  unique() %>% 
-  length()
-
-levels(metadata$metacluster) <- 
-  rev(levels(metadata$metacluster))
-
-metadata %>% 
-  count(metacluster, cancer_type_detailed) %>% 
-  rowwise() %>% 
-  mutate(n = n / total_cells_per_disease[cancer_type_detailed]) %>%
-  ungroup() %>% 
-  ggplot() + 
-  geom_tile(aes(x = cancer_type_detailed, 
-                y = metacluster, 
-                fill = n)) + 
-  scale_fill_viridis_c(name = 'Prop Disease Represented') + 
-  geom_text(data = patient_count_per_disease, 
-            aes(x = cancer_type_detailed, 
-                y = max_metacluster + 1, label = n), 
-            angle = 0, size = 3, 
-            fontface = 'italic') +
-  geom_text(data = cell_count_per_cluster, 
-            aes(x = num_diseases-1.5, 
-                y = metacluster, 
-                label = n), 
-            size = 3, 
-            hjust = -1,
-            angle = 0, 
-            fontface = 'italic') + 
-  xlab('') + ylab('Metcluster') + 
-  theme(axis.text.x = element_text(angle = -35, 
-                                   hjust = 0), 
-        axis.text.y.left = element_text(hjust = 1),
-        panel.background = element_blank(), 
-        panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank()) +
-  coord_cartesian(ylim=c(0, max_metacluster+2), 
-                  xlim=c(0.8, num_diseases+4)) + 
-  annotate(y=0.45, yend=0.45, 
-           x=0.5, xend=num_diseases+0.5, 
-           lwd=0.85, geom="segment") 
 
