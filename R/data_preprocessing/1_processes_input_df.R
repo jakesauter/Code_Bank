@@ -246,13 +246,3 @@ write.csv(patient_df,
           row.names = FALSE)
 
 
-
-if (FALSE) {
- # Downloading all data to local drive
-  
-  patient_df %>% 
-    head()
-  
-  
-}
-
