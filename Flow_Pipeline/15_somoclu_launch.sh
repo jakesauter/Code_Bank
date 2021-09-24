@@ -12,7 +12,7 @@ mpirun -np 60 somoclu -x 10 -y 10 -e 1000 -v 2 \
 
 mpirun -np 60 somoclu -x 10 -y 10 -e 1000 -v 2 \
   /gpfs/mskmind_ess/sauterj1/pipeline_objects/M2_random_sample_seurat_expression_data.table \
-  M2_spade_sample_somoclust
+  M2_random_sample_somoclust
 
 mpirun -np 60 somoclu -x 10 -y 10 -e 1000 -v 2 \
   /gpfs/mskmind_ess/sauterj1/pipeline_objects/M2_SPADE_seurat_expression_data.table \
