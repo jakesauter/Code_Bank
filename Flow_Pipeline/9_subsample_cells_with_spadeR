@@ -1,0 +1,251 @@
+#!/bin/Rscript
+
+# system('export OMP_NUM_THREADS=50,50,50')
+
+library(spade)
+library(dplyr)
+library(stringr)
+library(magrittr)
+library(flowCore)
+
+filter <- dplyr::filter
+
+flow_directories <-
+  list.files("/gpfs/mskmind_ess/sauterj1/Full_Cohort_Anon_Flow_Folders",
+             full.names = TRUE)
+
+# flow_directories <- 
+#   list.files("~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/", 
+#              full.names = TRUE)
+
+
+fcs_dat_list <-
+  vector('list', length(flow_directories))
+
+bad_dirs <- c()
+
+for (i in seq_along(flow_directories)) {
+  
+  cat('Processing directory:', i, 'of:', length(flow_directories), '\n')
+  
+  flow_directory <- flow_directories[i]
+  
+  cat('Flow Directory: ', flow_directory, '\n\n')
+  
+  tic <- Sys.time()
+  
+  res <- try({
+  
+    m1_fcs_file <- file.path(flow_directory, 'processed_M1.fcs')
+    m2_fcs_file <- file.path(flow_directory, 'processed_M2.fcs')
+    
+    SPADE.removeExistingDensityAndClusterColumns(m1_fcs_file)
+    SPADE.removeExistingDensityAndClusterColumns(m2_fcs_file)
+    
+    
+    m1_subsampled_fcs_file <-
+      m1_fcs_file %>% 
+      strsplit('\\.') %>% 
+      .[[1]] %>% .[1] %>% 
+      str_c('_subsampled_100k.fcs')
+    
+    m2_subsampled_fcs_file <-
+      m2_fcs_file %>% 
+      strsplit('\\.') %>% 
+      .[[1]] %>% .[1] %>% 
+      str_c('_subsampled_100k.fcs')
+    
+    file.remove(m1_subsampled_fcs_file)
+    file.remove(m2_subsampled_fcs_file)
+    
+    SPADE.addDensityToFCS(m1_fcs_file, 
+                          m1_fcs_file, 
+                          cols = NULL, 
+                          transforms=NULL,
+                          kernel_mult = 5, 
+                          apprx_mult = 1.5,
+                          med_samples = 10e3,
+                          comp=FALSE)
+    
+    SPADE.addDensityToFCS(m2_fcs_file, 
+                          m2_fcs_file, 
+                          cols = NULL, 
+                          transforms=NULL,
+                          kernel_mult = 5, 
+                          apprx_mult = 1.5,
+                          med_samples = 10e3,
+                          comp=FALSE)
+    
+    
+    SPADE.downsampleFCS(m1_fcs_file, 
+                        m1_subsampled_fcs_file, 
+                        target_percent = NULL, 
+                        target_number = 100e3)
+    
+    SPADE.downsampleFCS(m2_fcs_file, 
+                        m2_subsampled_fcs_file, 
+                        target_percent = NULL, 
+                        target_number = 100e3)
+    
+    SPADE.removeExistingDensityAndClusterColumns(m1_subsampled_fcs_file)
+    SPADE.removeExistingDensityAndClusterColumns(m2_subsampled_fcs_file)
+    
+    Sys.sleep(time = 1)
+    gc()
+  })
+  
+  if ('try-error' %in% class(res)) {
+    message(paste0('Error with dir: ', flow_directory))
+    bad_dirs <- c(bad_dirs, flow_directory) 
+  }
+  
+  toc <- Sys.time()
+  
+  cat('\n')
+  print(toc-tic)
+  cat('\n')
+}
+
+# if (!file.exists(m1_subsampled_fcs_file)) {
+#   m1_fcs_dat <- 
+#     read.FCS(m1_fcs_file, 
+#              transformation = FALSE)
+#   
+#   
+#   exprs(m1_fcs_dat) <- 
+#     exprs(m1_fcs_dat)[sample(1:nrow(m1_fcs_dat), 
+#                              100e3), ]
+#   
+#   write.FCS(m1_fcs_dat, 
+#             m1_subsampled_fcs_file)
+#   
+# } 
+# 
+# if (!file.exists(m2_subsampled_fcs_file)) {
+#   
+#   m2_fcs_dat <- 
+#     read.FCS(m2_fcs_file, 
+#              transformation = FALSE)
+#   
+#   exprs(m2_fcs_dat) <- 
+#     exprs(m2_fcs_dat)[sample(1:nrow(m2_fcs_dat), 
+#                              100e3), ]
+#   
+#   write.FCS(m2_fcs_dat, 
+#             m2_subsampled_fcs_file)
+# } 
+if (FALSE) {
+  
+  library(spade)
+  library(ggplot2)
+  library(magrittr)
+  library(flowCore)
+  library(patchwork)
+  Sys.setenv(OMP_NUM_THREADS=6)
+  
+  
+  m1_fcs_file <- "~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/2735660/processed_M1.fcs"
+  
+  
+  # Compute the local density of observation and incorporate the result 
+  # as a new parameter to the FCS file. The local density is modeled as 
+  # an integer count of the number of other observations within a specified 
+  # distance of the observation.
+  SPADE.removeExistingDensityAndClusterColumns(m1_fcs_file)
+  
+  SPADE.addDensityToFCS(m1_fcs_file, 
+                        m1_fcs_file, 
+                        cols = NULL, 
+                        transforms=NULL,
+                        kernel_mult = 5, 
+                        apprx_mult = 1.5,
+                        med_samples = 10e3,
+                        comp=FALSE)
+  
+  SPADE.downsampleFCS(infilename = "~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/2735660/processed_M1.fcs", 
+                      outfilename = "~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/2735660/processed_M1_downsampled.fcs", 
+                      target_percent = NULL, 
+                      target_number = 100e3)
+  
+  SPADE.addDensityToFCS("~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/2735660/processed_M1_downsampled.fcs", 
+                        "~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/2735660/processed_M1_downsampled.fcs", 
+                        cols = NULL, 
+                        transforms=NULL,
+                        kernel_mult = 5, 
+                        apprx_mult = 1.5,
+                        med_samples = 10e3,
+                        comp=FALSE)
+  
+  SPADE.addDensityToFCS("data/processed_M1_subsampled_100k.fcs", 
+                        "data/processed_M1_subsampled_100k.fcs", 
+                        cols = NULL, 
+                        transforms=NULL,
+                        kernel_mult = 5, 
+                        apprx_mult = 1.5,
+                        med_samples = 10e3,
+                        comp=FALSE)
+
+  # Note that adding this density column will screw up merging the data
+  # downstream, so we will just have to remove it after downsampling 
+  fcs <- 
+    read.FCS("~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/2735660/processed_M1.fcs")
+  
+  fcs2 <- 
+    read.FCS("~/Documents/Woodlist/Full_Cohort_Anon_Flow_Folders/2735660/processed_M1_downsampled.fcs")
+
+  fcs3 <- 
+    read.FCS('data/processed_M1_subsampled_100k.fcs')
+  
+  p1 <- 
+    exprs(fcs) %>% 
+    as.data.frame() %>% 
+    ggplot() + 
+    geom_histogram(aes(x = density), 
+                   color = 'black', 
+                   fill = 'skyblue', 
+                   bins = 50) + 
+    xlab('SPADE Density of Origin File') + 
+    ylab('Cell Count') 
+  
+  p2 <- 
+    exprs(fcs2) %>% 
+    as.data.frame() %>% 
+    ggplot() + 
+    geom_histogram(aes(x = `density-2`), 
+                   color = 'black', 
+                   fill = 'skyblue', 
+                   bins = 50) + 
+    xlab('SPADE Density After Subsampling') + 
+    ylab('Cell Count')
+  
+  
+  
+  p3 <- 
+    exprs(fcs3) %>% 
+    as.data.frame() %>% 
+    ggplot() + 
+    geom_histogram(aes(x = `density-2`), 
+                   color = 'black', 
+                   fill = 'skyblue', 
+                   bins = 50) + 
+    xlab('SPADE Density After Uniform Subsampling') + 
+    ylab('Cell Count')
+  
+  (p1 / p2 / p3) +
+    plot_annotation(caption = 'Single M1 FCS File SPADE Test')
+  
+  
+  
+  
+  
+  
+  
+  
+}
+
+
+
+
+
+
+
